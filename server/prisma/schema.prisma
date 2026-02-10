@@ -1,0 +1,59 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Keyword {
+  id        String    @id @default(uuid())
+  text      String    @unique
+  category  String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  hotspots  Hotspot[]
+}
+
+model Hotspot {
+  id           String    @id @default(uuid())
+  title        String
+  content      String
+  url          String
+  source       String    // twitter, bing, google
+  sourceId     String?   // 原始推文ID等
+  isReal       Boolean   @default(true)
+  relevance    Int       @default(0)
+  importance   String    @default("low")
+  summary      String?
+  viewCount    Int?
+  likeCount    Int?
+  retweetCount Int?
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  keywordId    String?
+  keyword      Keyword?  @relation(fields: [keywordId], references: [id], onDelete: SetNull)
+
+  @@unique([url, source])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // hotspot, alert
+  title     String
+  content   String
+  isRead    Boolean  @default(false)
+  hotspotId String?
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+}
