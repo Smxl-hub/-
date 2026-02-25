@@ -94,11 +94,23 @@ export const keywordsApi = {
 
 // Hotspots API
 export const hotspotsApi = {
-  getAll: (params?: { page?: number; limit?: number; source?: string; importance?: string; keywordId?: string }) => {
+  getAll: (params?: { 
+    page?: number; 
+    limit?: number; 
+    source?: string; 
+    importance?: string; 
+    keywordId?: string;
+    isReal?: string;
+    timeRange?: string;
+    timeFrom?: string;
+    timeTo?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  }) => {
     const searchParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) searchParams.append(key, String(value));
+        if (value !== undefined && value !== '') searchParams.append(key, String(value));
       });
     }
     return request<{ data: Hotspot[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(

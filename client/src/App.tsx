@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Flame, Search, Plus, Bell, Trash2, 
   ExternalLink, RefreshCw, X, Check, AlertTriangle,
-  Zap, TrendingUp, Twitter, Globe, Eye, Activity, Clock, Target
+  Zap, TrendingUp, Twitter, Globe, Eye, Activity, Clock, Target,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { 
   keywordsApi, hotspotsApi, notificationsApi, triggerHotspotCheck,
@@ -14,6 +15,8 @@ import { cn } from './lib/utils';
 import { Spotlight } from './components/ui/spotlight';
 import { BackgroundBeams } from './components/ui/background-beams';
 import { Meteors } from './components/ui/meteors';
+import FilterSortBar, { defaultFilterState, type FilterState } from './components/FilterSortBar';
+import { sortHotspots } from './utils/sortHotspots';
 // TextGenerateEffect available for future use
 
 function App() {
@@ -30,19 +33,38 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'keywords' | 'search'>('dashboard');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [dashboardFilters, setDashboardFilters] = useState<FilterState>({ ...defaultFilterState });
+  const [searchFilters, setSearchFilters] = useState<FilterState>({ ...defaultFilterState });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchResults, setSearchResults] = useState<Hotspot[]>([]);
 
   // 加载数据
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
+      const filterParams: Record<string, string | number> = {
+        limit: 20,
+        page: currentPage,
+      };
+      // Apply dashboard filters
+      if (dashboardFilters.source) filterParams.source = dashboardFilters.source;
+      if (dashboardFilters.importance) filterParams.importance = dashboardFilters.importance;
+      if (dashboardFilters.keywordId) filterParams.keywordId = dashboardFilters.keywordId;
+      if (dashboardFilters.timeRange) filterParams.timeRange = dashboardFilters.timeRange;
+      if (dashboardFilters.isReal) filterParams.isReal = dashboardFilters.isReal;
+      if (dashboardFilters.sortBy) filterParams.sortBy = dashboardFilters.sortBy;
+      if (dashboardFilters.sortOrder) filterParams.sortOrder = dashboardFilters.sortOrder;
+
       const [keywordsData, hotspotsData, statsData, notifData] = await Promise.all([
         keywordsApi.getAll(),
-        hotspotsApi.getAll({ limit: 20 }),
+        hotspotsApi.getAll(filterParams as any),
         hotspotsApi.getStats(),
         notificationsApi.getAll({ limit: 20 })
       ]);
       setKeywords(keywordsData);
       setHotspots(hotspotsData.data);
+      setTotalPages(hotspotsData.pagination.totalPages);
       setStats(statsData);
       setNotifications(notifData.data);
       setUnreadCount(notifData.unreadCount);
@@ -57,7 +79,12 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [dashboardFilters, currentPage]);
+
+  // 当筛选条件变化时重置页码
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dashboardFilters]);
 
   useEffect(() => {
     loadData();
@@ -131,7 +158,7 @@ function App() {
     setIsLoading(true);
     try {
       const result = await hotspotsApi.search(searchQuery);
-      setHotspots(result.results);
+      setSearchResults(result.results);
       showToast(`找到 ${result.results.length} 条结果`, 'success');
     } catch (error) {
       showToast('搜索失败', 'error');
@@ -165,6 +192,45 @@ function App() {
     }
   };
 
+  // Client-side filtering/sorting for search results
+  const filteredSearchResults = useMemo(() => {
+    let results = [...searchResults];
+
+    // Apply filters
+    if (searchFilters.source) {
+      results = results.filter(h => h.source === searchFilters.source);
+    }
+    if (searchFilters.importance) {
+      results = results.filter(h => h.importance === searchFilters.importance);
+    }
+    if (searchFilters.isReal === 'true') {
+      results = results.filter(h => h.isReal);
+    } else if (searchFilters.isReal === 'false') {
+      results = results.filter(h => !h.isReal);
+    }
+    if (searchFilters.keywordId) {
+      results = results.filter(h => h.keyword?.id === searchFilters.keywordId);
+    }
+    if (searchFilters.timeRange) {
+      const now = new Date();
+      let dateFrom: Date | null = null;
+      switch (searchFilters.timeRange) {
+        case '1h': dateFrom = new Date(now.getTime() - 60 * 60 * 1000); break;
+        case 'today': dateFrom = new Date(now); dateFrom.setHours(0, 0, 0, 0); break;
+        case '7d': dateFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+        case '30d': dateFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+      }
+      if (dateFrom) {
+        results = results.filter(h => new Date(h.createdAt) >= dateFrom!);
+      }
+    }
+
+    // Apply sorting using shared utility
+    results = sortHotspots(results, searchFilters.sortBy || 'createdAt', (searchFilters.sortOrder || 'desc') as 'asc' | 'desc');
+
+    return results;
+  }, [searchResults, searchFilters]);
+
   const getImportanceIcon = (importance: string) => {
     switch (importance) {
       case 'urgent': return <AlertTriangle className="w-4 h-4" />;
@@ -177,8 +243,26 @@ function App() {
   const getSourceIcon = (source: string) => {
     switch (source) {
       case 'twitter': return <Twitter className="w-4 h-4" />;
+      case 'bilibili': return <Eye className="w-4 h-4" />;
+      case 'weibo': return <Activity className="w-4 h-4" />;
+      case 'sogou': return <Search className="w-4 h-4" />;
+      case 'hackernews': return <Zap className="w-4 h-4" />;
       default: return <Globe className="w-4 h-4" />;
     }
+  };
+
+  const getSourceLabel = (source: string) => {
+    const labels: Record<string, string> = {
+      twitter: 'Twitter',
+      bing: 'Bing',
+      google: 'Google',
+      sogou: '搜狗',
+      bilibili: 'Bilibili',
+      weibo: '微博热搜',
+      hackernews: 'HackerNews',
+      duckduckgo: 'DuckDuckGo'
+    };
+    return labels[source] || source;
   };
 
   return (
@@ -398,12 +482,21 @@ function App() {
 
             {/* Hotspots Feed */}
             <div>
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Flame className="w-5 h-5 text-orange-500" />
                   实时热点流
                 </h2>
                 <span className="text-xs text-slate-600">每 30 分钟自动更新</span>
+              </div>
+
+              {/* Filter & Sort Bar */}
+              <div className="mb-5">
+                <FilterSortBar
+                  filters={dashboardFilters}
+                  onChange={setDashboardFilters}
+                  keywords={keywords}
+                />
               </div>
               
               {isLoading ? (
@@ -444,7 +537,7 @@ function App() {
                             </span>
                             <span className="flex items-center gap-1 text-xs text-slate-600">
                               {getSourceIcon(hotspot.source)}
-                              {hotspot.source}
+                              {getSourceLabel(hotspot.source)}
                             </span>
                             {hotspot.keyword && (
                               <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -491,6 +584,57 @@ function App() {
                       </div>
                     </motion.div>
                   ))}
+                </div>
+              )}
+
+              {/* Pagination */}
+              {totalPages > 1 && !isLoading && (
+                <div className="flex items-center justify-center gap-3 mt-6">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                      let page: number;
+                      if (totalPages <= 7) {
+                        page = i + 1;
+                      } else if (currentPage <= 4) {
+                        page = i + 1;
+                      } else if (currentPage >= totalPages - 3) {
+                        page = totalPages - 6 + i;
+                      } else {
+                        page = currentPage - 3 + i;
+                      }
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={cn(
+                            "w-8 h-8 rounded-lg text-xs font-medium transition-all",
+                            currentPage === page
+                              ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                              : "text-slate-500 hover:text-white hover:bg-white/5"
+                          )}
+                        >
+                          {page}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-slate-600 ml-2">
+                    共 {stats?.total || 0} 条
+                  </span>
                 </div>
               )}
             </div>
@@ -627,9 +771,22 @@ function App() {
               </div>
             </form>
 
+            {/* Search Filter & Sort Bar */}
+            <FilterSortBar
+              filters={searchFilters}
+              onChange={setSearchFilters}
+              keywords={keywords}
+            />
+
             {/* Search Results */}
             <div className="space-y-3">
-              {hotspots.map((hotspot, i) => (
+              {filteredSearchResults.length === 0 && searchResults.length > 0 && (
+                <div className="text-center py-12 rounded-2xl border border-dashed border-white/10">
+                  <p className="text-slate-500">当前筛选条件下无结果</p>
+                  <p className="text-sm text-slate-600 mt-1">尝试调整筛选条件</p>
+                </div>
+              )}
+              {filteredSearchResults.map((hotspot, i) => (
                 <motion.div 
                   key={hotspot.id} 
                   initial={{ opacity: 0, y: 10 }}
@@ -649,7 +806,10 @@ function App() {
                         )}>
                           {hotspot.importance}
                         </span>
-                        <span className="text-xs text-slate-600">{hotspot.source}</span>
+                        <span className="flex items-center gap-1 text-xs text-slate-600">
+                          {getSourceIcon(hotspot.source)}
+                          {getSourceLabel(hotspot.source)}
+                        </span>
                       </div>
                       <h3 className="font-medium text-white mb-2">{hotspot.title}</h3>
                       <p className="text-sm text-slate-500 line-clamp-2">{hotspot.content.slice(0, 200)}...</p>

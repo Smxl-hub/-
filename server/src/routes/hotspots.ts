@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../db.js';
+import { sortHotspots } from '../utils/sortHotspots.js';
 
 const router = Router();
 
@@ -11,7 +12,13 @@ router.get('/', async (req, res) => {
       limit = '20', 
       source, 
       importance,
-      keywordId 
+      keywordId,
+      isReal,
+      timeRange,
+      timeFrom,
+      timeTo,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -22,13 +29,67 @@ router.get('/', async (req, res) => {
     if (source) where.source = source;
     if (importance) where.importance = importance;
     if (keywordId) where.keywordId = keywordId;
+    if (isReal !== undefined && isReal !== '') {
+      where.isReal = isReal === 'true';
+    }
 
-    const [hotspots, total] = await Promise.all([
+    // 时间范围筛选
+    if (timeRange) {
+      const now = new Date();
+      let dateFrom: Date | null = null;
+      switch (timeRange) {
+        case '1h':
+          dateFrom = new Date(now.getTime() - 60 * 60 * 1000);
+          break;
+        case 'today':
+          dateFrom = new Date(now);
+          dateFrom.setHours(0, 0, 0, 0);
+          break;
+        case '7d':
+          dateFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case '30d':
+          dateFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+      }
+      if (dateFrom) {
+        where.createdAt = { gte: dateFrom };
+      }
+    } else if (timeFrom || timeTo) {
+      where.createdAt = {};
+      if (timeFrom) where.createdAt.gte = new Date(timeFrom as string);
+      if (timeTo) where.createdAt.lte = new Date(timeTo as string);
+    }
+
+    // 排序处理
+    let orderBy: any;
+    const sort = sortBy as string;
+    const order = (sortOrder as string) === 'asc' ? 'asc' : 'desc';
+
+    // importance 和 hot 需要在内存中排序（Prisma 不支持自定义排序）
+    const needsMemorySort = sort === 'importance' || sort === 'hot';
+
+    switch (sort) {
+      case 'publishedAt':
+        orderBy = [{ publishedAt: order }, { createdAt: 'desc' }];
+        break;
+      case 'relevance':
+        orderBy = { relevance: order };
+        break;
+      case 'importance':
+      case 'hot':
+        orderBy = { createdAt: 'desc' };
+        break;
+      default:
+        orderBy = { createdAt: order };
+        break;
+    }
+
+    const [rawHotspots, total] = await Promise.all([
       prisma.hotspot.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limitNum,
+        orderBy,
+        ...(needsMemorySort ? {} : { skip, take: limitNum }),
         include: {
           keyword: {
             select: { id: true, text: true, category: true }
@@ -37,6 +98,14 @@ router.get('/', async (req, res) => {
       }),
       prisma.hotspot.count({ where })
     ]);
+
+    let hotspots;
+    if (needsMemorySort) {
+      const sorted = sortHotspots(rawHotspots, sort, order as 'asc' | 'desc');
+      hotspots = sorted.slice(skip, skip + limitNum);
+    } else {
+      hotspots = rawHotspots;
+    }
 
     res.json({
       data: hotspots,
