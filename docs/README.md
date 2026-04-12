@@ -1,4 +1,4 @@
-# 🔥 热点监控工具 (Yupi Hot Monitor)
+# 🔥 最新情报站 (Yupi Hot Monitor)
 
 > 一款自动发现热点、智能识别真假内容、实时推送通知的 AI 工具
 
@@ -49,7 +49,7 @@
 ## 📁 项目结构
 
 ```
-yupi-hot-monitor/
+最新情报站/
 ├── docs/                    # 文档目录
 │   ├── README.md           # 项目说明
 │   ├── REQUIREMENTS.md     # 需求文档
