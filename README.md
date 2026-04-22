@@ -140,5 +140,11 @@ cd client && npm run dev
 
 更多细节请查看 [保姆级本地运行指南](docs/LOCAL_SETUP.md)。
 
+## 五、文档索引
+
+- [项目说明](docs/README.md)
+- [本地运行指南](docs/LOCAL_SETUP.md)
+- [API 集成说明](docs/API_INTEGRATION.md)
+
 
 
