@@ -1,9 +1,23 @@
 import { OpenRouter } from '@openrouter/sdk';
 import type { AIAnalysis } from '../types.js';
 
-const openRouter = new OpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY ?? ''
-});
+let openRouterClient: OpenRouter | null = null;
+let openRouterClientKey: string | null = null;
+
+function getOpenRouterClient(): OpenRouter | null {
+  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  if (!apiKey) {
+    return null;
+  }
+
+  // Rebuild client if key changed after restart/hot reload.
+  if (!openRouterClient || openRouterClientKey !== apiKey) {
+    openRouterClient = new OpenRouter({ apiKey });
+    openRouterClientKey = apiKey;
+  }
+
+  return openRouterClient;
+}
 
 // ========== Query Expansion（查询扩展） ==========
 
@@ -24,6 +38,13 @@ export async function expandKeyword(keyword: string): Promise<string[]> {
   const coreTerms = extractCoreTerms(keyword);
 
   if (!process.env.OPENROUTER_API_KEY) {
+    const result = [keyword, ...coreTerms];
+    expansionCache.set(keyword, result);
+    return result;
+  }
+
+  const openRouter = getOpenRouterClient();
+  if (!openRouter) {
     const result = [keyword, ...coreTerms];
     expansionCache.set(keyword, result);
     return result;
@@ -153,6 +174,19 @@ export async function analyzeContent(content: string, keyword: string, preMatchR
   const matchResult = preMatchResult ?? { matched: false, matchedTerms: [] };
 
   if (!process.env.OPENROUTER_API_KEY) {
+    console.warn('OpenRouter API key not configured, using fallback analysis');
+    return {
+      isReal: true,
+      relevance: matchResult.matched ? 50 : 20,
+      relevanceReason: '未配置 AI 服务，使用默认分数',
+      keywordMentioned: matchResult.matched,
+      importance: 'low',
+      summary: content.slice(0, 50) + '...'
+    };
+  }
+
+  const openRouter = getOpenRouterClient();
+  if (!openRouter) {
     console.warn('OpenRouter API key not configured, using fallback analysis');
     return {
       isReal: true,
