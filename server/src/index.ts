@@ -11,6 +11,7 @@ import hotspotsRouter from './routes/hotspots.js';
 import settingsRouter from './routes/settings.js';
 import notificationsRouter from './routes/notifications.js';
 import { runHotspotCheck } from './jobs/hotspotChecker.js';
+import { runDailyDigest } from './jobs/dailyDigest.js';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ const io = new Server(httpServer, {
 });
 
 // Middleware
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
@@ -74,6 +76,17 @@ cron.schedule('*/30 * * * *', async () => {
     console.log('✅ Scheduled hotspot check completed');
   } catch (error) {
     console.error('❌ Scheduled hotspot check failed:', error);
+  }
+});
+
+// Scheduled job: Daily digest at 9:00 AM local time
+cron.schedule('0 9 * * *', async () => {
+  console.log('📊 Running daily digest...');
+  try {
+    await runDailyDigest();
+    console.log('✅ Daily digest completed');
+  } catch (error) {
+    console.error('❌ Daily digest failed:', error);
   }
 });
 

@@ -1,4 +1,12 @@
-# 🔌 API 集成技术文档
+# 🔌 API 集成技术文档 — HotPulse 最新情报站
+
+> 数据源总数：**16+** 个国际源（2026.06 更新）
+> 
+> 社交/社区：Twitter/X, Reddit (5 AI 子版块), HackerNews
+> AI 研究：ArXiv, DEV.to
+> 产品发现：ProductHunt, GitHub Trending
+> AI 博客 RSS：OpenAI, DeepMind, TechCrunch AI, VentureBeat AI, The Verge AI, Ars Technica, MarkTechPost, MIT Tech Review
+> 网页搜索：Bing, Google, DuckDuckGo
 
 ## 1. OpenRouter API 集成
 

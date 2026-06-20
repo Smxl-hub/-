@@ -237,15 +237,29 @@ export async function analyzeContent(content: string, keyword: string, preMatchR
     }
 
     throw new Error('Failed to parse AI response');
-  } catch (error) {
-    console.error('AI analysis failed:', error);
-    // Fallback
+  } catch (error: any) {
+    // Distinguish auth errors (invalid/expired key) from network errors
+    const isAuthError = error?.status === 401 || error?.status === 403
+      || error?.message?.includes('Authentication')
+      || error?.message?.includes('auth');
+
+    if (isAuthError) {
+      console.error('⚠️  OpenRouter API authentication failed — check OPENROUTER_API_KEY in .env');
+    } else {
+      console.error('AI analysis failed:', error instanceof Error ? error.message : error);
+    }
+
+    // Intelligent fallback: when preMatch matched, give a passing score
+    // so keyword-relevant content still gets through even without AI
+    const fallbackRelevance = matchResult.matched ? 55 : 15;
     return {
       isReal: true,
-      relevance: matchResult.matched ? 30 : 10,
-      relevanceReason: 'AI 分析失败，使用默认分数',
+      relevance: fallbackRelevance,
+      relevanceReason: isAuthError
+        ? `API Key 无效，预匹配${matchResult.matched ? '命中' : '未命中'}，降级分数 ${fallbackRelevance}`
+        : `AI 分析失败，预匹配${matchResult.matched ? '命中' : '未命中'}，降级分数 ${fallbackRelevance}`,
       keywordMentioned: matchResult.matched,
-      importance: 'low',
+      importance: matchResult.matched ? 'medium' : 'low',
       summary: content.slice(0, 50) + '...'
     };
   }

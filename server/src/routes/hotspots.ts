@@ -4,13 +4,13 @@ import { sortHotspots } from '../utils/sortHotspots.js';
 
 const router = Router();
 
-// 获取所有热点
+// Get all hotspots (with filters, pagination, sorting)
 router.get('/', async (req, res) => {
   try {
-    const { 
-      page = '1', 
-      limit = '20', 
-      source, 
+    const {
+      page = '1',
+      limit = '20',
+      source,
       importance,
       keywordId,
       isReal,
@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
       where.isReal = isReal === 'true';
     }
 
-    // 时间范围筛选
+    // Time range filter
     if (timeRange) {
       const now = new Date();
       let dateFrom: Date | null = null;
@@ -61,12 +61,12 @@ router.get('/', async (req, res) => {
       if (timeTo) where.createdAt.lte = new Date(timeTo as string);
     }
 
-    // 排序处理
+    // Sorting
     let orderBy: any;
     const sort = sortBy as string;
     const order = (sortOrder as string) === 'asc' ? 'asc' : 'desc';
 
-    // importance 和 hot 需要在内存中排序（Prisma 不支持自定义排序）
+    // importance and hot need in-memory sorting (Prisma can't sort custom fields)
     const needsMemorySort = sort === 'importance' || sort === 'hot';
 
     switch (sort) {
@@ -122,7 +122,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 获取热点统计
+// Get hotspot statistics
 router.get('/stats', async (req, res) => {
   try {
     const today = new Date();
@@ -162,14 +162,12 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// 获取单个热点
+// Get single hotspot
 router.get('/:id', async (req, res) => {
   try {
     const hotspot = await prisma.hotspot.findUnique({
       where: { id: req.params.id },
-      include: {
-        keyword: true
-      }
+      include: { keyword: true }
     });
 
     if (!hotspot) {
@@ -183,47 +181,65 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// 手动搜索热点
+// Manual search across all sources
 router.post('/search', async (req, res) => {
   try {
-    const { query, sources = ['twitter', 'bing'] } = req.body;
+    const {
+      query,
+      sources = ['twitter', 'bing', 'google', 'duckduckgo', 'hackernews', 'rss', 'arxiv', 'reddit', 'devto', 'producthunt', 'github']
+    } = req.body;
 
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
     }
 
-    // 导入搜索服务
+    // Dynamic imports for search services
     const { searchTwitter } = await import('../services/twitter.js');
-    const { searchBing } = await import('../services/search.js');
-    const { analyzeContent } = await import('../services/ai.js');
+    const { searchBing, searchGoogle, searchDuckDuckGo, searchHackerNews } = await import('../services/search.js');
+    const { fetchAllFeeds } = await import('../services/rssFeeds.js');
+    const { searchArXiv } = await import('../services/arxiv.js');
+    const { searchReddit } = await import('../services/reddit.js');
+    const { searchDevTo } = await import('../services/devto.js');
+    const { searchProductHunt } = await import('../services/producthunt.js');
+    const { searchGitHubTrending } = await import('../services/githubTrending.js');
+    const { analyzeContent, preMatchKeyword, expandKeyword } = await import('../services/ai.js');
 
     const results: any[] = [];
 
-    // Twitter 搜索
-    if (sources.includes('twitter')) {
+    // Execute searches based on requested sources
+    const searchMap: Record<string, () => Promise<any[]>> = {
+      twitter: () => searchTwitter(query),
+      bing: () => searchBing(query),
+      google: () => searchGoogle(query),
+      duckduckgo: () => searchDuckDuckGo(query),
+      hackernews: () => searchHackerNews(query),
+      rss: () => fetchAllFeeds(),
+      arxiv: () => searchArXiv(query),
+      reddit: () => searchReddit(query),
+      devto: () => searchDevTo(query),
+      producthunt: () => searchProductHunt(),
+      github: () => searchGitHubTrending(query),
+    };
+
+    for (const source of sources) {
+      const searchFn = searchMap[source];
+      if (!searchFn) continue;
       try {
-        const tweets = await searchTwitter(query);
-        results.push(...tweets);
+        const sourceResults = await searchFn();
+        results.push(...sourceResults);
       } catch (error) {
-        console.error('Twitter search failed:', error);
+        console.error(`${source} search failed:`, error);
       }
     }
 
-    // Bing 搜索
-    if (sources.includes('bing')) {
-      try {
-        const webResults = await searchBing(query);
-        results.push(...webResults);
-      } catch (error) {
-        console.error('Bing search failed:', error);
-      }
-    }
-
-    // AI 分析前几个结果
+    // AI analysis for top 10 results (with preMatch for better accuracy)
+    const expandedKw = await expandKeyword(query);
     const analyzedResults = await Promise.all(
       results.slice(0, 10).map(async (item) => {
         try {
-          const analysis = await analyzeContent(item.title + ' ' + item.content, query);
+          const fullText = item.title + ' ' + item.content;
+          const preMatch = preMatchKeyword(fullText, expandedKw);
+          const analysis = await analyzeContent(fullText, query, preMatch);
           return { ...item, analysis };
         } catch {
           return { ...item, analysis: null };
@@ -238,7 +254,7 @@ router.post('/search', async (req, res) => {
   }
 });
 
-// 删除热点
+// Delete hotspot
 router.delete('/:id', async (req, res) => {
   try {
     await prisma.hotspot.delete({

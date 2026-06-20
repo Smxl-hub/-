@@ -1,28 +1,30 @@
 ---
 name: latest-intel-station
 description: >
-  AI hotspot monitoring and trending topic discovery across multiple sources (Bing, Google, DuckDuckGo, HackerNews,
-  Sogou, Bilibili, Weibo, Twitter). Use when users ask about: trending news, hot topics, latest developments in a field,
+  AI hotspot monitoring and trending topic discovery across 16+ international sources (Twitter/X, HackerNews,
+  ArXiv, Reddit, DEV.to, ProductHunt, GitHub Trending, RSS feeds from OpenAI/DeepMind/TechCrunch/VentureBeat,
+  plus Bing/Google/DuckDuckGo). Use when users ask about: trending AI news, hot topics, latest developments,
   monitoring keywords, tech/AI news discovery, generating hotspot reports, "最近有什么热点", "帮我关注XX动态",
   "查一下XX最新消息", "生成热点报告", "monitor XX", "what's trending in XX", or any request to search/track/discover
-  current events and trending content across Chinese and international platforms.
+  current events and trending content across international platforms.
 ---
 
 # 最新情报站 — AI 热点监控技能
 
-Search and analyze trending topics across 8+ sources without any server or database. Scripts handle data collection; use your own AI capabilities for analysis.
+Search and analyze trending topics across 16+ international sources without any server or database. Scripts handle data collection; use your own AI capabilities for analysis.
 
 ## Quick Start
 
 All scripts are in `scripts/`. Install dependencies first:
 
 ```bash
-pip install requests beautifulsoup4
+pip install requests beautifulsoup4 feedparser
 ```
 
-Set optional env vars for Twitter (other sources need no keys):
+Set optional env vars (all sources work without keys):
 ```bash
-export TWITTER_API_KEY=your_key   # optional, for Twitter search
+export TWITTER_API_KEY=your_key        # optional, for Twitter/X search
+export PRODUCTHUNT_TOKEN=your_token    # optional, for ProductHunt GraphQL
 ```
 
 ## Core Workflow
@@ -36,19 +38,19 @@ Determine what the user needs:
 
 ### 2. Execute Search
 
-Run search scripts based on scope. Always combine international + Chinese sources for comprehensive coverage.
+Run search scripts based on scope. All sources are international (English-first), no Chinese sources.
 
-**International sources** (no API keys needed):
+**Web search** (no API keys needed):
 ```bash
-python scripts/search_web.py "AI programming" --sources bing,hackernews,duckduckgo
+python scripts/search_web.py "AI programming" --sources bing,google,duckduckgo,hackernews
 ```
 
-**Chinese sources** (no API keys needed):
+**AI ecosystem sources** (no API keys needed):
 ```bash
-python scripts/search_china.py "AI编程" --sources sogou,bilibili,weibo
+python scripts/search_ai.py "large language models" --sources arxiv,reddit,devto,producthunt,github,rss
 ```
 
-**Twitter** (requires `TWITTER_API_KEY`):
+**Twitter/X** (requires `TWITTER_API_KEY`):
 ```bash
 python scripts/search_twitter.py "AI programming"
 ```
@@ -62,7 +64,7 @@ After collecting search results, apply the analysis framework yourself (no exter
 1. **Authenticity** (`isReal`): Is this genuine news or clickbait/rumor?
 2. **Relevance** (0-100): How related is this to the user's interest area?
 3. **Importance** (low/medium/high/urgent): How significant is this development?
-4. **Summary**: One-sentence Chinese summary of the core information
+4. **Summary**: One-sentence summary of the core information in context of the keyword
 
 See [references/analysis-guide.md](references/analysis-guide.md) for detailed evaluation criteria.
 
@@ -71,32 +73,43 @@ See [references/analysis-guide.md](references/analysis-guide.md) for detailed ev
 Format output as structured report, sorted by importance. Use this template:
 
 ```markdown
-## 🔥 热点监控报告 — {keyword}
-> 扫描时间: {timestamp} | 数据源: {sources_used}
+## 🔥 Hotspot Monitor Report — {keyword}
+> Scan time: {timestamp} | Sources: {sources_used}
 
-### 🚨 紧急 (Urgent)
+### 🚨 Urgent
 - **{title}** — {summary}
-  来源: {source} | 相关性: {relevance}% | [原文链接]({url})
+  Source: {source} | Relevance: {relevance}% | [Link]({url})
 
-### 🔴 重要 (High)
+### 🔴 High
 ...
 
-### 🟡 一般 (Medium)
+### 🟡 Medium
 ...
 
-### 🟢 低优先级 (Low)
+### 🟢 Low
 ...
 
 ---
-共发现 {total} 条热点，其中紧急 {urgent} 条，重要 {high} 条
+Found {total} hotspots: {urgent} urgent, {high} high
 ```
+
+## Data Sources (16+ International)
+
+| Category | Sources | API Key Needed |
+|----------|---------|----------------|
+| **Real-time Social** | Twitter/X, Reddit (5 AI subs) | Twitter only |
+| **Tech Community** | HackerNews, DEV.to | None |
+| **AI Research** | ArXiv (cs.AI/LG/CL/CV/NE) | None |
+| **AI Blogs (RSS)** | OpenAI, DeepMind, TechCrunch AI, VentureBeat AI, The Verge AI, Ars Technica, MarkTechPost, MIT Tech Review | None |
+| **Product Discovery** | ProductHunt, GitHub Trending | PH token optional |
+| **Web Search** | Bing, Google, DuckDuckGo | None |
 
 ## Script Reference
 
 | Script | Sources | API Key | Output |
 |--------|---------|---------|--------|
 | `search_web.py` | Bing, Google, DuckDuckGo, HackerNews | None | JSON array of `{title, content, url, source, publishedAt?}` |
-| `search_china.py` | Sogou, Bilibili, Weibo | None | JSON array (same schema + engagement metrics) |
+| `search_ai.py` | ArXiv, Reddit, DEV.to, ProductHunt, GitHub Trending, RSS Feeds | None | JSON array (same schema + engagement metrics) |
 | `search_twitter.py` | Twitter/X | `TWITTER_API_KEY` | JSON array (same schema + author info) |
 | `generate_report.py` | — | None | Reads JSON from stdin, outputs Markdown report |
 
@@ -119,14 +132,6 @@ For better coverage, expand the user's keyword into variants before searching:
 - English/Chinese translations (e.g., "人工智能" ↔ "AI" ↔ "Artificial Intelligence")
 - Abbreviations (e.g., "GPT-5" → also search "GPT5", "OpenAI GPT")
 - Related terms (e.g., "Claude" → also search "Anthropic", "Claude 4")
-
-### Bilibili Account Detection
-
-`search_china.py` supports `--detect-account` flag. If the keyword matches a Bilibili creator's name, it fetches their latest videos instead of doing a generic search:
-
-```bash
-python scripts/search_china.py "程序员鱼皮" --detect-account
-```
 
 ### Multi-keyword Batch
 
